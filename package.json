@@ -8,9 +8,9 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "start": "NODE_ENV=production node --env-file=.env src/index.js",
-    "dev": "node --env-file=.env --watch src/index.js",
-    "setup": "node --env-file=.env src/setup.js",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env src/index.js",
+    "dev": "node --env-file-if-exists=.env --watch src/index.js",
+    "setup": "node --env-file-if-exists=.env src/setup.js",
     "test": "node --test 'tests/**/*.test.js'"
   },
   "dependencies": {
