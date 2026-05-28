@@ -1,7 +1,7 @@
 import express from 'express';
 import * as OpenApiValidator from 'express-openapi-validator';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { basicAuth } from './auth.js';
 import {
@@ -105,6 +105,11 @@ app.use((err, req, res, next) => {
   res.status(status).json(body);
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`Budget Tracker listening on http://${HOST}:${PORT}`);
-});
+const isMain = import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  app.listen(PORT, HOST, () => {
+    console.log(`Budget Tracker listening on http://${HOST}:${PORT}`);
+  });
+}
+
+export { app };
