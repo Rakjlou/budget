@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d10" />
+<title>Budget</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<!-- Login -->
+<section id="login" class="screen" hidden>
+  <form id="loginForm" class="card auth">
+    <h1>Budget</h1>
+    <input name="username" placeholder="Identifiant" autocomplete="username" required />
+    <input name="password" type="password" placeholder="Mot de passe" autocomplete="current-password" required />
+    <button type="submit" class="primary">Entrer</button>
+    <p class="err" id="loginErr" hidden></p>
+  </form>
+</section>
+
+<!-- Empty (no period yet) -->
+<section id="empty" class="screen" hidden>
+  <div class="empty">
+    <svg viewBox="0 0 24 24" class="big-icon"><path d="M12 2v20M2 12h20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <p>Aucune période</p>
+    <button class="primary" data-open="period-sheet">Créer la première</button>
+  </div>
+</section>
+
+<!-- Home -->
+<section id="home" class="screen" hidden>
+  <header class="top">
+    <button class="icon" id="historyBtn" aria-label="Historique">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <h2 id="periodName"></h2>
+    <button class="icon" id="newPeriodBtn" aria-label="Nouvelle période">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  <div class="hero">
+    <div class="remaining" id="remaining">—</div>
+    <div class="sub"><span id="spent">—</span> <span class="muted">/ <span id="budget">—</span></span></div>
+    <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+  </div>
+
+  <div class="list-head">
+    <span>Dépenses</span>
+    <span class="muted" id="count"></span>
+  </div>
+  <ul id="expenses" class="expenses"></ul>
+
+  <button class="fab" id="addBtn" aria-label="Ajouter">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+  </button>
+</section>
+
+<!-- History -->
+<section id="history" class="screen" hidden>
+  <header class="top">
+    <button class="icon" data-back aria-label="Retour">
+      <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <h2>Périodes</h2>
+    <span class="icon-spacer"></span>
+  </header>
+  <ul id="periods" class="periods"></ul>
+</section>
+
+<!-- History detail -->
+<section id="periodDetail" class="screen" hidden>
+  <header class="top">
+    <button class="icon" data-back-history aria-label="Retour">
+      <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <h2 id="detailName"></h2>
+    <span class="icon-spacer"></span>
+  </header>
+  <div class="hero">
+    <div class="remaining" id="detailRemaining">—</div>
+    <div class="sub"><span id="detailSpent">—</span> <span class="muted">/ <span id="detailBudget">—</span></span></div>
+  </div>
+  <div class="list-head"><span>Dépenses</span><span class="muted" id="detailCount"></span></div>
+  <ul id="detailExpenses" class="expenses"></ul>
+</section>
+
+<!-- Expense sheet -->
+<div class="sheet" id="expense-sheet" hidden>
+  <div class="sheet-backdrop" data-close></div>
+  <form class="sheet-panel" id="expenseForm">
+    <div class="grab"></div>
+    <h3>Nouvelle dépense</h3>
+    <input name="amount" type="text" inputmode="decimal" placeholder="0,00 €" required autocomplete="off" />
+    <input name="label" type="text" placeholder="Libellé" required maxlength="120" autocomplete="off" />
+    <div class="row">
+      <button type="button" class="ghost" data-close>Annuler</button>
+      <button type="submit" class="primary">Ajouter</button>
+    </div>
+    <p class="err" id="expenseErr" hidden></p>
+  </form>
+</div>
+
+<!-- Period sheet -->
+<div class="sheet" id="period-sheet" hidden>
+  <div class="sheet-backdrop" data-close></div>
+  <form class="sheet-panel" id="periodForm">
+    <div class="grab"></div>
+    <h3 id="periodSheetTitle">Nouvelle période</h3>
+    <input name="name" type="text" placeholder="Nom (ex. Mai 2026)" required maxlength="120" autocomplete="off" />
+    <input name="budget" type="text" inputmode="decimal" placeholder="Budget en €" required autocomplete="off" />
+    <div class="row">
+      <button type="button" class="ghost" data-close>Annuler</button>
+      <button type="submit" class="primary">Ouvrir</button>
+    </div>
+    <p class="err" id="periodErr" hidden></p>
+  </form>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

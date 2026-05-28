@@ -22,6 +22,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const apiSpecPath = path.resolve(__dirname, '../openapi.yaml');
+const publicDir = path.resolve(__dirname, '../public');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -44,6 +45,8 @@ app.use(express.json());
 app.get('/openapi.yaml', (req, res) => {
   res.type('application/yaml').sendFile(apiSpecPath);
 });
+
+app.use(express.static(publicDir, { extensions: ['html'] }));
 
 app.use('/api/v1', basicAuth);
 

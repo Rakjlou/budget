@@ -1,0 +1,273 @@
+const API = '/api/v1';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+const fmt = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const fmtDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+};
+const euros = (cents) => fmt.format((cents || 0) / 100);
+const parseAmount = (s) => {
+  const n = Number(String(s).replace(',', '.').replace(/[^\d.\-]/g, ''));
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100);
+};
+
+const state = {
+  auth: sessionStorage.getItem('auth') || '',
+  current: null,
+};
+
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { Authorization: 'Basic ' + state.auth },
+  };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(API + path, opts);
+  if (res.status === 401) {
+    sessionStorage.removeItem('auth');
+    state.auth = '';
+    show('login');
+    throw new Error('Unauthorized');
+  }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(data?.message || res.statusText);
+    err.code = data?.error;
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function show(id) {
+  $$('.screen').forEach((s) => (s.hidden = s.id !== id));
+}
+
+function openSheet(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.hidden = false;
+  const input = el.querySelector('input');
+  if (input) setTimeout(() => input.focus(), 50);
+}
+function closeSheet(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.hidden = true;
+  const form = el.querySelector('form');
+  if (form) form.reset();
+  const err = el.querySelector('.err');
+  if (err) { err.hidden = true; err.textContent = ''; }
+}
+
+// ---------- Routes ----------
+
+async function loadHome() {
+  try {
+    const [p, expenses] = await Promise.all([
+      api('GET', '/periods/current'),
+      api('GET', '/periods/current/expenses'),
+    ]);
+    state.current = p;
+    renderHome(p);
+    renderExpenses($('#expenses'), expenses, { deletable: true });
+    show('home');
+  } catch (e) {
+    if (e.status === 404) {
+      show('empty');
+    } else if (e.message !== 'Unauthorized') {
+      console.error(e);
+      alert(e.message);
+    }
+  }
+}
+
+function renderHome(p) {
+  $('#periodName').textContent = p.name;
+  const remainingEl = $('#remaining');
+  remainingEl.textContent = euros(p.remaining);
+  remainingEl.classList.toggle('negative', p.remaining < 0);
+  $('#spent').textContent = euros(p.spent);
+  $('#budget').textContent = euros(p.budget);
+  $('#count').textContent = p.expense_count ? `${p.expense_count}` : '';
+  const pct = p.budget > 0 ? Math.min(100, Math.max(0, (p.spent / p.budget) * 100)) : 0;
+  const fill = $('#barFill');
+  fill.style.width = pct + '%';
+  fill.classList.toggle('warn', pct >= 75 && pct < 100);
+  fill.classList.toggle('over', p.spent > p.budget);
+}
+
+function renderExpenses(ul, items, { deletable = false } = {}) {
+  ul.innerHTML = '';
+  if (!items.length) {
+    const li = document.createElement('li');
+    li.className = 'empty-row';
+    li.textContent = 'Aucune dépense';
+    ul.appendChild(li);
+    return;
+  }
+  for (const ex of items) {
+    const isRefund = ex.amount > 0;
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div class="label"><span class="l"></span><span class="d"></span></div>
+      <span class="amt ${isRefund ? 'pos' : ''}"></span>
+      ${deletable ? `<button class="del" aria-label="Supprimer"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v7M14 11v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
+    `;
+    li.querySelector('.l').textContent = ex.label;
+    li.querySelector('.d').textContent = fmtDate(ex.date);
+    li.querySelector('.amt').textContent = (isRefund ? '+' : '') + euros(ex.amount);
+    if (deletable) {
+      li.querySelector('.del').addEventListener('click', async () => {
+        if (!confirm(`Supprimer « ${ex.label} » ?`)) return;
+        try {
+          await api('DELETE', `/expenses/${ex.id}`);
+          loadHome();
+        } catch (e) { alert(e.message); }
+      });
+    }
+    ul.appendChild(li);
+  }
+}
+
+async function loadHistory() {
+  try {
+    const list = await api('GET', '/periods');
+    const ul = $('#periods');
+    ul.innerHTML = '';
+    if (!list.length) {
+      const li = document.createElement('li');
+      li.className = 'empty-row';
+      li.textContent = 'Aucune période';
+      ul.appendChild(li);
+    }
+    for (const p of list) {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="row1">
+          <span class="pname"></span>
+          <span class="ptag"></span>
+        </div>
+        <div class="row2">
+          <span class="rem"></span>
+          <span class="bg"></span>
+        </div>
+      `;
+      li.querySelector('.pname').textContent = p.name;
+      const tag = li.querySelector('.ptag');
+      tag.textContent = p.status === 'open' ? 'Ouverte' : 'Close';
+      tag.classList.toggle('open', p.status === 'open');
+      li.querySelector('.rem').textContent = `Reste ${euros(p.remaining)}`;
+      li.querySelector('.bg').textContent = `${euros(p.spent)} / ${euros(p.budget)}`;
+      li.addEventListener('click', () => loadPeriodDetail(p.id));
+      ul.appendChild(li);
+    }
+    show('history');
+  } catch (e) { if (e.message !== 'Unauthorized') alert(e.message); }
+}
+
+async function loadPeriodDetail(id) {
+  try {
+    const [p, exs] = await Promise.all([
+      api('GET', `/periods/${id}`),
+      api('GET', `/periods/${id}/expenses`),
+    ]);
+    $('#detailName').textContent = p.name;
+    const r = $('#detailRemaining');
+    r.textContent = euros(p.remaining);
+    r.classList.toggle('negative', p.remaining < 0);
+    $('#detailSpent').textContent = euros(p.spent);
+    $('#detailBudget').textContent = euros(p.budget);
+    $('#detailCount').textContent = p.expense_count ? `${p.expense_count}` : '';
+    renderExpenses($('#detailExpenses'), exs);
+    show('periodDetail');
+  } catch (e) { if (e.message !== 'Unauthorized') alert(e.message); }
+}
+
+// ---------- Wiring ----------
+
+$('#loginForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const u = f.get('username');
+  const p = f.get('password');
+  state.auth = btoa(`${u}:${p}`);
+  sessionStorage.setItem('auth', state.auth);
+  $('#loginErr').hidden = true;
+  loadHome();
+});
+
+$('#historyBtn').addEventListener('click', loadHistory);
+$('#newPeriodBtn').addEventListener('click', () => {
+  $('#periodSheetTitle').textContent = 'Nouvelle période';
+  openSheet('period-sheet');
+});
+$('#addBtn').addEventListener('click', () => openSheet('expense-sheet'));
+
+$$('[data-open]').forEach((b) => {
+  b.addEventListener('click', () => openSheet(b.dataset.open));
+});
+$$('[data-close]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const sheet = b.closest('.sheet');
+    if (sheet) closeSheet(sheet.id);
+  });
+});
+$$('[data-back]').forEach((b) => b.addEventListener('click', loadHome));
+$$('[data-back-history]').forEach((b) => b.addEventListener('click', loadHistory));
+
+$('#expenseForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const cents = parseAmount(f.get('amount'));
+  const label = String(f.get('label') || '').trim();
+  const err = $('#expenseErr');
+  if (cents === null || cents <= 0) {
+    err.textContent = 'Montant invalide';
+    err.hidden = false;
+    return;
+  }
+  if (!label) {
+    err.textContent = 'Libellé requis';
+    err.hidden = false;
+    return;
+  }
+  try {
+    await api('POST', '/periods/current/expenses', { amount: -cents, label });
+    closeSheet('expense-sheet');
+    loadHome();
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+  }
+});
+
+$('#periodForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const name = String(f.get('name') || '').trim();
+  const cents = parseAmount(f.get('budget'));
+  const err = $('#periodErr');
+  if (!name) { err.textContent = 'Nom requis'; err.hidden = false; return; }
+  if (cents === null || cents < 0) { err.textContent = 'Budget invalide'; err.hidden = false; return; }
+  try {
+    await api('POST', '/periods', { name, budget: cents });
+    closeSheet('period-sheet');
+    loadHome();
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+  }
+});
+
+// Boot
+if (state.auth) loadHome();
+else show('login');
