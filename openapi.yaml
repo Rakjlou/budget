@@ -1,0 +1,438 @@
+openapi: 3.1.0
+
+info:
+  title: Budget Tracker API
+  version: 1.0.0
+  description: |
+    API minimale de suivi de dépenses par période.
+
+    Règles fondamentales :
+    - Exactement une période ouverte à tout instant (sauf à l'amorçage).
+    - Créer une nouvelle période ferme automatiquement la précédente (atomique).
+    - Création de dépense uniquement dans la période courante ; déplacement vers une autre période (ouverte ou close) via PATCH /expenses/{id}.
+    - Montants en centimes entiers signés. Négatif = dépense, positif = remboursement, 0 autorisé.
+    - Authentification Basic Auth sur tous les endpoints.
+
+servers:
+  - url: /api/v1
+
+security:
+  - basicAuth: []
+
+tags:
+  - name: periods
+    description: Gestion des périodes budgétaires
+  - name: expenses
+    description: Gestion des dépenses
+
+components:
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+
+    Period:
+      type: object
+      required:
+        - id
+        - name
+        - budget
+        - opened_at
+        - closed_at
+        - status
+        - spent
+        - remaining
+        - expense_count
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+        budget:
+          type: integer
+          minimum: 0
+          description: Budget en centimes
+        opened_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: [string, "null"]
+          format: date-time
+          description: NULL si la période est encore ouverte
+        status:
+          type: string
+          enum: [open, closed]
+        spent:
+          type: integer
+          description: Somme des montants signés inversée (-SUM). Positif si dépensé net.
+        remaining:
+          type: integer
+          description: budget - spent
+        expense_count:
+          type: integer
+          minimum: 0
+
+    PeriodInput:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - budget
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        budget:
+          type: integer
+          minimum: 0
+
+    PeriodUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        budget:
+          type: integer
+          minimum: 0
+
+    Expense:
+      type: object
+      required:
+        - id
+        - period_id
+        - amount
+        - label
+        - date
+        - created_at
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        period_id:
+          type: integer
+          minimum: 1
+        amount:
+          type: integer
+          description: Centimes signés (négatif = dépense, positif = remboursement)
+        label:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+
+    ExpenseInput:
+      type: object
+      additionalProperties: false
+      required:
+        - amount
+        - label
+      properties:
+        amount:
+          type: integer
+        label:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          format: date
+          description: Optionnel, défaut = date du jour (UTC)
+
+    ExpenseUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        amount:
+          type: integer
+        label:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          format: date
+        period_id:
+          type: integer
+          minimum: 1
+          description: |
+            Permet de déplacer la dépense vers une autre période (ouverte ou close).
+            Seul chemin pour rattacher une dépense à une période close.
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Code lisible par machine
+          examples: [validation_failed, not_found, conflict, unauthorized]
+        message:
+          type: string
+        details:
+          type: array
+          items: {}
+
+  responses:
+    Unauthorized:
+      description: Auth manquante ou invalide
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: 'Basic realm="budget-tracker"'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Body, params ou query invalides
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflit (par ex. nom de période déjà pris)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+paths:
+
+  /periods:
+    get:
+      tags: [periods]
+      summary: Liste toutes les périodes (tri opened_at DESC)
+      operationId: listPeriods
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Period" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [periods]
+      summary: Crée une nouvelle période, fermant la précédente s'il y en a une
+      description: |
+        Opération atomique :
+        - Si une période est actuellement ouverte, elle est close (closed_at = now).
+        - Une nouvelle période ouverte est créée avec les paramètres fournis.
+        - En cas d'échec, rollback complet : aucune modification.
+      operationId: createPeriod
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PeriodInput" }
+      responses:
+        "201":
+          description: Période créée
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Period" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /periods/current:
+    get:
+      tags: [periods]
+      summary: Période actuellement ouverte
+      operationId: getCurrentPeriod
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Period" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Aucune période ouverte (état initial du système)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /periods/current/expenses:
+    get:
+      tags: [expenses]
+      summary: Dépenses de la période en cours
+      operationId: listCurrentExpenses
+      responses:
+        "200":
+          description: OK (tri date DESC, created_at DESC)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Expense" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Aucune période ouverte
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [expenses]
+      summary: Ajoute une dépense à la période en cours
+      description: |
+        Seul endpoint de création d'une dépense. Pour rattacher une dépense
+        à une période close (correction après clôture), créer puis utiliser
+        PATCH /expenses/{id} avec un nouveau period_id.
+      operationId: createCurrentExpense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpenseInput" }
+      responses:
+        "201":
+          description: Dépense créée
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Aucune période ouverte
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /periods/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      tags: [periods]
+      summary: Détail d'une période
+      operationId: getPeriod
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Period" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [periods]
+      summary: Modifie le nom et/ou le budget d'une période
+      description: |
+        Marche sur toute période (ouverte ou close). Ne permet pas de modifier
+        opened_at / closed_at — une période close ne peut pas être réouverte.
+      operationId: updatePeriod
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PeriodUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Period" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /periods/{id}/expenses:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      tags: [expenses]
+      summary: Liste les dépenses d'une période (tri date DESC, created_at DESC)
+      operationId: listExpensesByPeriod
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Expense" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /expenses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      tags: [expenses]
+      summary: Détail d'une dépense
+      operationId: getExpense
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [expenses]
+      summary: Modifie une dépense
+      description: |
+        Tous les champs sont éditables, y compris `period_id`. Modifier `period_id`
+        déplace la dépense vers une autre période (ouverte ou close). C'est le seul
+        chemin pour rattacher une dépense à une période close. Au moins un champ
+        doit être fourni.
+      operationId: updateExpense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpenseUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [expenses]
+      summary: Supprime une dépense
+      operationId: deleteExpense
+      responses:
+        "204":
+          description: Supprimée
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
