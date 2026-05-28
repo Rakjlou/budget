@@ -167,7 +167,10 @@ async function loadHistory() {
       tag.classList.toggle('open', p.status === 'open');
       li.querySelector('.rem').textContent = `Reste ${euros(p.remaining)}`;
       li.querySelector('.bg').textContent = `${euros(p.spent)} / ${euros(p.budget)}`;
-      li.addEventListener('click', () => loadPeriodDetail(p.id));
+      li.addEventListener('click', () => {
+        if (p.status === 'open') loadHome();
+        else loadPeriodDetail(p.id);
+      });
       ul.appendChild(li);
     }
     show('history');
