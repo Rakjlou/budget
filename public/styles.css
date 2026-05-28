@@ -164,16 +164,46 @@ input, button { font-size: 16px; }
 .expenses .label .d { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
 .expenses .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
 .expenses .amt.pos { color: var(--accent-strong); }
-.expenses .del {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  display: inline-flex; align-items: center; justify-content: center;
+/* Swipe to delete (shared between expenses and periods) */
+.expenses li.swipeable, .periods li.swipeable {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  display: block;
 }
-.expenses .del:hover { background: var(--surface-2); color: var(--danger); }
-.expenses .del svg { width: 18px; height: 18px; }
+.swipe-front {
+  background: var(--surface);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  transition: transform .25s cubic-bezier(.2,.7,.2,1);
+  touch-action: pan-y;
+  position: relative;
+  z-index: 1;
+}
+.periods li.swipeable .swipe-front {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: pointer;
+}
+.swipe-action {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 72px;
+  background: var(--danger);
+  color: #fff;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 0;
+}
+.swipe-action svg { width: 22px; height: 22px; }
+.swipe-action:active { filter: brightness(0.9); }
 
 .periods li {
   flex-direction: column;
@@ -181,7 +211,7 @@ input, button { font-size: 16px; }
   gap: 6px;
   cursor: pointer;
 }
-.periods li:hover { background: var(--surface-2); }
+.periods li:hover, .periods li.swipeable:hover .swipe-front { background: var(--surface-2); }
 .periods .row1 { display: flex; justify-content: space-between; align-items: center; }
 .periods .pname { font-weight: 600; }
 .periods .ptag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }

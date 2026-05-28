@@ -120,23 +120,120 @@ function renderExpenses(ul, items, { deletable = false } = {}) {
     li.innerHTML = `
       <div class="label"><span class="l"></span><span class="d"></span></div>
       <span class="amt ${isRefund ? 'pos' : ''}"></span>
-      ${deletable ? `<button class="del" aria-label="Supprimer"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v7M14 11v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
     `;
     li.querySelector('.l').textContent = ex.label;
     li.querySelector('.d').textContent = fmtDate(ex.date);
     li.querySelector('.amt').textContent = (isRefund ? '+' : '') + euros(ex.amount);
     if (deletable) {
-      li.querySelector('.del').addEventListener('click', async () => {
-        if (!confirm(`Supprimer « ${ex.label} » ?`)) return;
-        try {
-          await api('DELETE', `/expenses/${ex.id}`);
-          loadHome();
-        } catch (e) { alert(e.message); }
+      makeSwipeable(li, {
+        onDelete: async () => {
+          try {
+            await api('DELETE', `/expenses/${ex.id}`);
+            loadHome();
+          } catch (e) { alert(e.message); }
+        },
       });
     }
     ul.appendChild(li);
   }
 }
+
+// ---------- Swipe to delete ----------
+
+const TRASH_SVG = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v7M14 11v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ACTION_W = 72;
+let openSwipe = null;
+
+function makeSwipeable(li, { onDelete, onTap } = {}) {
+  const front = document.createElement('div');
+  front.className = 'swipe-front';
+  while (li.firstChild) front.appendChild(li.firstChild);
+
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'swipe-action';
+  action.setAttribute('aria-label', 'Supprimer');
+  action.innerHTML = TRASH_SVG;
+
+  li.classList.add('swipeable');
+  li.appendChild(action);
+  li.appendChild(front);
+
+  let startX = 0, startY = 0, dx = 0, base = 0;
+  let dragging = false, locked = null, isOpen = false, didSwipe = false;
+
+  const setX = (x) => { front.style.transform = `translateX(${x}px)`; };
+  const open = () => {
+    isOpen = true;
+    front.style.transition = '';
+    setX(-ACTION_W);
+    li.classList.add('swipe-open');
+    if (openSwipe && openSwipe !== close) openSwipe();
+    openSwipe = close;
+  };
+  function close() {
+    isOpen = false;
+    front.style.transition = '';
+    setX(0);
+    li.classList.remove('swipe-open');
+    if (openSwipe === close) openSwipe = null;
+  }
+
+  front.addEventListener('touchstart', (e) => {
+    if (openSwipe && openSwipe !== close) openSwipe();
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    base = isOpen ? -ACTION_W : 0;
+    dx = base;
+    dragging = true; locked = null; didSwipe = false;
+    front.style.transition = 'none';
+  }, { passive: true });
+
+  front.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    const t = e.touches[0];
+    const ddx = t.clientX - startX;
+    const ddy = t.clientY - startY;
+    if (locked === null) {
+      if (Math.abs(ddx) > 8 || Math.abs(ddy) > 8) {
+        locked = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
+      }
+    }
+    if (locked !== 'x') return;
+    didSwipe = true;
+    dx = Math.min(0, Math.max(-ACTION_W * 1.3, base + ddx));
+    setX(dx);
+  }, { passive: true });
+
+  const finish = () => {
+    if (!dragging) return;
+    dragging = false;
+    front.style.transition = '';
+    if (locked === 'x') {
+      if (dx < -ACTION_W / 2) open();
+      else close();
+    }
+  };
+  front.addEventListener('touchend', finish);
+  front.addEventListener('touchcancel', finish);
+
+  front.addEventListener('click', () => {
+    if (didSwipe) { didSwipe = false; return; }
+    if (isOpen) { close(); return; }
+    if (onTap) onTap();
+  });
+
+  action.addEventListener('click', () => {
+    close();
+    onDelete();
+  });
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (!openSwipe) return;
+  const li = e.target.closest('.swipeable.swipe-open');
+  if (!li) openSwipe();
+}, true);
 
 async function loadHistory() {
   try {
@@ -167,9 +264,17 @@ async function loadHistory() {
       tag.classList.toggle('open', p.status === 'open');
       li.querySelector('.rem').textContent = `Reste ${euros(p.remaining)}`;
       li.querySelector('.bg').textContent = `${euros(p.spent)} / ${euros(p.budget)}`;
-      li.addEventListener('click', () => {
-        if (p.status === 'open') loadHome();
-        else loadPeriodDetail(p.id);
+      makeSwipeable(li, {
+        onTap: () => {
+          if (p.status === 'open') loadHome();
+          else loadPeriodDetail(p.id);
+        },
+        onDelete: async () => {
+          try {
+            await api('DELETE', `/periods/${p.id}`);
+            loadHistory();
+          } catch (e) { alert(e.message); }
+        },
       });
       ul.appendChild(li);
     }
